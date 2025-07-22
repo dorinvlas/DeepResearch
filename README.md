@@ -1,4 +1,5 @@
 ### Deep Research At Home! 
+For Azure AI Foundry integration, use the `aifoundry_pipe` script.
 
 This script performs advanced AI research and returns a comprehensive research report that cites its sources and verifies those citations. 
 
