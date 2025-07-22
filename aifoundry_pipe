@@ -5540,6 +5540,11 @@ Reply with JUST "Yes" or "No" - no explanation or other text.""",
                 temperature = self.valves.TEMPERATURE
 
             if self.valves.USE_AZURE_FOUNDRY:
+                if model.lower().startswith("o3") and temperature != 1:
+                    logger.warning(
+                        f"Model {model} only supports temperature=1; overriding"
+                    )
+                    temperature = 1
                 url = f"{self.valves.AZURE_API_BASE}/openai/deployments/{model}/chat/completions?api-version={self.valves.AZURE_API_VERSION}"
                 headers = {"api-key": self.valves.AZURE_API_KEY}
                 payload = {

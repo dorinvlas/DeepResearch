@@ -7,8 +7,6 @@ import re
 import random
 import numpy as np
 import aiohttp
-import os
-import tiktoken
 import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Callable, Awaitable, Optional, Any, Union, Set, Tuple
@@ -293,22 +291,6 @@ class Pipe:
         )
         OLLAMA_URL: str = Field(
             default="http://localhost:11434", description="URL for Ollama API"
-        )
-        USE_AZURE_FOUNDRY: bool = Field(
-            default=False,
-            description="Enable Azure AI Foundry endpoints instead of Ollama",
-        )
-        AZURE_API_BASE: str = Field(
-            default="",
-            description="Base URL for Azure AI Foundry, e.g. https://my-resource.openai.azure.com",
-        )
-        AZURE_API_KEY: str = Field(
-            default="",
-            description="API key for Azure AI Foundry",
-        )
-        AZURE_API_VERSION: str = Field(
-            default="2024-02-15-preview",
-            description="Azure OpenAI API version",
         )
         SEARCH_URL: str = Field(
             default="http://192.168.1.1:8888/search?q=",
@@ -609,23 +591,17 @@ class Pipe:
         return [{"id": f"{name}-pipe", "name": f"{name} Pipe"}]
 
     async def count_tokens(self, text: str) -> int:
-        """Count tokens in text"""
+        """Count tokens in text using Ollama API"""
         if not text:
             return 0
 
-        if self.valves.USE_AZURE_FOUNDRY:
-            try:
-                enc = tiktoken.get_encoding("cl100k_base")
-                return len(enc.encode(text))
-            except Exception as e:
-                logger.error(f"Error counting tokens with tiktoken: {e}")
-
         try:
+            # Use Ollama's tokenize endpoint with the specified model
             connector = aiohttp.TCPConnector(force_close=True)
             async with aiohttp.ClientSession(connector=connector) as session:
                 payload = {
                     "model": self.valves.RESEARCH_MODEL,
-                    "prompt": text,
+                    "prompt": text,  # Do not limit length for token counting
                 }
 
                 async with session.post(
@@ -634,6 +610,7 @@ class Pipe:
                     if response.status == 200:
                         result = await response.json()
                         tokens = result.get("tokens", [])
+                        # If we got only a partial count due to truncation, estimate full count
                         if len(text) > 2000:
                             ratio = len(text) / 2000
                             return int(len(tokens) * ratio)
@@ -641,8 +618,9 @@ class Pipe:
         except Exception as e:
             logger.error(f"Error counting tokens with Ollama API: {e}")
 
+        # Fallback to simple estimation if API call fails
         words = text.split()
-        return int(len(words) * 1.3)
+        return int(len(words) * 1.3)  # Approximate token count using words
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:
         """Get embedding for a text string using the configured embedding model with caching"""
@@ -661,39 +639,30 @@ class Pipe:
         try:
             connector = aiohttp.TCPConnector(force_close=True)
             async with aiohttp.ClientSession(connector=connector) as session:
-                if self.valves.USE_AZURE_FOUNDRY:
-                    url = f"{self.valves.AZURE_API_BASE}/openai/deployments/{self.valves.EMBEDDING_MODEL}/embeddings?api-version={self.valves.AZURE_API_VERSION}"
-                    headers = {"api-key": self.valves.AZURE_API_KEY}
-                    payload = {"input": text}
-                else:
-                    url = f"{self.valves.OLLAMA_URL}/api/embed"
-                    headers = None
-                    payload = {
-                        "model": self.valves.EMBEDDING_MODEL,
-                        "input": text,
-                    }
+                payload = {
+                    "model": self.valves.EMBEDDING_MODEL,
+                    "input": text,
+                }
 
-                async with session.post(url, json=payload, headers=headers, timeout=30) as response:
+                async with session.post(
+                    f"{self.valves.OLLAMA_URL}/api/embed", json=payload, timeout=30
+                ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        if self.valves.USE_AZURE_FOUNDRY:
-                            data = result.get("data", [])
-                            if data:
-                                embedding = data[0].get("embedding")
-                                if embedding:
-                                    self.embedding_cache.set(text, embedding)
-                                    return embedding
-                        else:
-                            if "embedding" in result:
-                                embedding = result.get("embedding", [])
-                                if embedding:
-                                    self.embedding_cache.set(text, embedding)
-                                    return embedding
-                            elif "embeddings" in result and result["embeddings"]:
-                                embedding = result["embeddings"][0]
-                                if embedding:
-                                    self.embedding_cache.set(text, embedding)
-                                    return embedding
+                        # Handle both old and new API response formats
+                        if "embedding" in result:
+                            embedding = result.get("embedding", [])
+                            if embedding:
+                                # Cache the result
+                                self.embedding_cache.set(text, embedding)
+                                return embedding
+                        elif "embeddings" in result and result["embeddings"]:
+                            # New format with batch response (we only sent one text, so take first)
+                            embedding = result["embeddings"][0]
+                            if embedding:
+                                # Cache the result
+                                self.embedding_cache.set(text, embedding)
+                                return embedding
                     else:
                         logger.warning(
                             f"Embedding request failed with status {response.status}"
@@ -5539,35 +5508,19 @@ Reply with JUST "Yes" or "No" - no explanation or other text.""",
             if temperature is None:
                 temperature = self.valves.TEMPERATURE
 
-            if self.valves.USE_AZURE_FOUNDRY:
-                url = f"{self.valves.AZURE_API_BASE}/openai/deployments/{model}/chat/completions?api-version={self.valves.AZURE_API_VERSION}"
-                headers = {"api-key": self.valves.AZURE_API_KEY}
-                payload = {
-                    "messages": messages,
-                    "temperature": temperature,
-                    "stream": stream,
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=payload, headers=headers, timeout=60) as resp:
-                        if resp.status == 200:
-                            response = await resp.json()
-                        else:
-                            text = await resp.text()
-                            raise Exception(f"Azure completion failed {resp.status}: {text}")
-            else:
-                form_data = {
-                    "model": model,
-                    "messages": messages,
-                    "stream": stream,
-                    "temperature": temperature,
-                    "keep_alive": "10m",
-                }
+            form_data = {
+                "model": model,
+                "messages": messages,
+                "stream": stream,
+                "temperature": temperature,
+                "keep_alive": "10m",
+            }
 
-                response = await generate_chat_completions(
-                    self.__request__,
-                    form_data,
-                    user=self.__user__,
-                )
+            response = await generate_chat_completions(
+                self.__request__,
+                form_data,
+                user=self.__user__,
+            )
 
             return response
         except Exception as e:
