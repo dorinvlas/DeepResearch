@@ -448,6 +448,12 @@ class Pipe:
         self.type = "manifold"
         self.valves = self.Valves()
 
+        if self.valves.USE_AZURE_FOUNDRY:
+            base = self.valves.AZURE_API_BASE.rstrip("/")
+            os.environ["RAG_AZURE_OPENAI_BASE_URL"] = base
+            os.environ["RAG_AZURE_OPENAI_API_KEY"] = self.valves.AZURE_API_KEY
+            os.environ["RAG_AZURE_OPENAI_API_VERSION"] = self.valves.AZURE_API_VERSION
+
         # Use state manager to isolate conversation states
         self.state_manager = ResearchStateManager()
         self.conversation_id = None  # Will be set during pipe method
