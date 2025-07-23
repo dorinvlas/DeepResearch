@@ -685,7 +685,7 @@ class Pipe:
                         f"{base}/openai/deployments/{self.valves.EMBEDDING_MODEL}/embeddings?api-version={self.valves.AZURE_API_VERSION}"
                     )
                     headers = {"api-key": self.valves.AZURE_API_KEY}
-                    payload = {"input": text}
+                    payload = {"input": [text]}
                 else:
                     url = f"{self.valves.OLLAMA_URL}/api/embed"
                     headers = None
@@ -716,8 +716,9 @@ class Pipe:
                                     self.embedding_cache.set(text, embedding)
                                     return embedding
                     else:
+                        text = await response.text()
                         logger.warning(
-                            f"Embedding request failed with status {response.status}"
+                            f"Embedding request failed with status {response.status}: {text}"
                         )
 
             return None
@@ -1961,6 +1962,9 @@ class Pipe:
 
                 # Project chunks into the principal component space for better analysis
                 projected_chunks = eigendecomposition["projected_embeddings"]
+                if not projected_chunks or not isinstance(projected_chunks[0], (list, tuple, np.ndarray)):
+                    logger.warning("Invalid projected embeddings format")
+                    raise TypeError("invalid projected embeddings")
                 eigenvectors = np.array(eigendecomposition["eigenvectors"])
 
                 # Calculate local coherence using the eigenspace
@@ -4607,7 +4611,7 @@ class Pipe:
             from open_webui.routers.retrieval import process_web_search, SearchForm
 
             # Create a search form with the query
-            search_form = SearchForm(queries=[query])
+            search_form = SearchForm(queries=[str(query)])
 
             # Call the search function
             logger.debug(f"Executing built-in search with query: {query}")
