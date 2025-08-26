@@ -4,6 +4,53 @@ This script performs advanced AI research and returns a comprehensive research r
 
 After the user enters a query, the script generates a handful of starter searches, then drafts a research outline for user review. User feedback is not only used to revise the outline, but the user preferences expressed through this feedback are used to shape the continued direction of research. After performing follow-up searches to revise the outline, iterative research begins, tracking the research outline from cycle to cycle, monitoring the completion of topics, and semantically determining which topics to pursue next. Repeat search results are managed variously with sliding content windows, progressive truncation, and relevance penalties, balancing an aim to limit repetition with milking the particularly-relevant repeats. After the research list is sufficiently addressed, or the max cycle limit is hit, long results are semantically compressed and a final outline is generated to refocus on the original query. The report is then generated per-subsection, combined into sections, edited per-section, combined into a final report, and globally edited. After an abstract/introduction/conclusion are generated, the final report is returned. Research results are saved as a text file to your home directory as well. Note that this all means it takes a while - this isn't a 2-minute Grok or 5-minute ChatGPT research process, it's a 30-60 minute process depending on length, and that's the biggest downside. You can't have good, cheap, *and* fast, though :)
 
+## 🔒 NEW: Automated Threat Modeling Extension
+
+The DeepResearch system now includes **automated Threagile YAML threat model generation** capabilities! This extension integrates with Open WebUI knowledge bases to automatically generate standards-compliant threat models from architecture documentation.
+
+### Key Features
+
+- **Enhanced Discovery Phase**: Self-learning discovery with user feedback integration
+- **Knowledge Base Integration**: Queries Open WebUI knowledge bases for architecture information
+- **Iterative Analysis**: Multiple research cycles to improve threat model accuracy
+- **Threagile Compliance**: Generates valid Threagile YAML threat models
+- **Docker Validation**: Integrates with `ctm:local` for automated validation
+- **Semantic Processing**: Leverages existing DeepResearch semantic analysis capabilities
+- **Interactive Clarification**: Real-time user feedback through OpenWebUI chat interface
+- **Confidence Scoring**: AI-driven confidence assessment for discovered assets
+- **Pattern Learning**: Continuous improvement based on successful/failed discovery patterns
+
+### Enhanced Discovery Phase
+
+The latest enhancement introduces a sophisticated **self-learning discovery system** that:
+
+- **Learns from Experience**: Tracks successful and failed query patterns to improve future discoveries
+- **Interactive Feedback**: Requests user clarification for low-confidence findings via OpenWebUI chat
+- **Threagile Schema Alignment**: Specifically discovers all properties required by Threagile standard
+- **Confidence Assessment**: Provides confidence scores for each discovered asset
+- **Adaptive Templates**: Uses learned patterns to generate more effective discovery queries
+
+### Example Usage
+
+```text
+Generate a threat model for the customer portal system
+Create a Threagile analysis for the payment API microservice
+Perform threat modeling for our e-commerce platform
+```
+
+The system will automatically:
+
+1. Query your knowledge base using adaptive discovery templates
+2. Extract architecture components with confidence scoring
+3. Request user clarification for low-confidence areas
+4. Generate Threagile-compliant YAML with complete property coverage
+5. Validate using Docker containers
+6. Learn from the session to improve future discoveries
+
+See [ENHANCED_DISCOVERY_PHASE.md](ENHANCED_DISCOVERY_PHASE.md) for detailed information about the enhanced discovery capabilities and [THREAT_MODELING_INTEGRATION.md](THREAT_MODELING_INTEGRATION.md) for complete setup instructions.
+
+---
+
 The default settings are geared towards my personal dual-3090 setup. You could probably get this to be reasonably performant with 8-12gb VRAM by dropping MAX_CYCLES, MAX_RESULT_TOKENS, COMPRESSION_SETPOINT, using gemma3:12b for synthesis, possibly adjusting the equation governing amount of most relevant sources provided to each subsection model instance... on a tangential note, the final outline (by which the report is generated) scales based on the number of occurred research cycles and is set towards the smaller side to further reduce the slop factor of the final product (see prompt in generate_synthesis_outline) - adjust those equations to taste if you want a longer/even shorter final report, and even consider setting it for a super long output just to use the research deliverable as an intermediate you can then parse/process/summarize separately. 
 
 You'll need to provide your own search engine information - I use my own SearXNG instance and recommend the same. Be aware: the useragent/headers/referer/request delay efforts only go so far, and certain high-tier academic sources *will* begin filtering your traffic, so limit your most-important researches accordingly. EDIT: I added archive.org integration as a fallback which helps significantly
