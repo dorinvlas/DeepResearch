@@ -12,11 +12,13 @@ The default settings are geared towards my personal dual-3090 setup. You could p
 The `aifoundry_pipe` script can run against multiple hosted inference providers while keeping the original Ollama support available. Choose one of the following sets of valves when configuring the pipe:
 
 - **Azure AI Foundry** – set `USE_AZURE_FOUNDRY` to true and provide `AZURE_API_BASE`, `AZURE_API_KEY`, and `AZURE_API_VERSION`. These settings drive both chat completions and embeddings requests against your Azure OpenAI resource.
-- **OpenRouter** – set `USE_OPENROUTER` to true and supply `OPENROUTER_API_KEY`. Optional valves like `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME` populate the recommended headers, while `OPENROUTER_CACHE_MAX_AGE` / `OPENROUTER_CACHE_TOKENS` expose OpenRouter's response caching controls. By default embeddings follow the Open WebUI embedding configuration; set `OPENROUTER_EMBEDDING_MODEL` if you want to send embedding requests through the OpenRouter API base you configure via `OPENROUTER_API_BASE`.
+- **OpenRouter** – set `USE_OPENROUTER` to true and supply `OPENROUTER_API_KEY`. Optional valves like `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME` populate the recommended headers, while `OPENROUTER_CACHE_MAX_AGE` / `OPENROUTER_CACHE_TOKENS` expose OpenRouter's response caching controls. By default embeddings follow the Open WebUI embedding configuration; set `OPENROUTER_EMBEDDING_MODEL` if you want to send embedding requests through the OpenRouter API base you configure via `OPENROUTER_API_BASE`. When the OpenRouter API rejects a request, the pipe now surfaces suggestions such as adjusting privacy settings or double-checking the requested model ID to speed up troubleshooting.
 
 Only one cloud provider can be enabled at a time. Leaving both flags false keeps the original Ollama-only behaviour intact.
 
 You'll need to provide your own search engine information - I use my own SearXNG instance and recommend the same. Be aware: the useragent/headers/referer/request delay efforts only go so far, and certain high-tier academic sources *will* begin filtering your traffic, so limit your most-important researches accordingly. EDIT: I added archive.org integration as a fallback which helps significantly
+
+If the bundled Open WebUI search endpoint is failing (for example, a self-hosted SearXNG instance returning 4xx/5xx codes), set the new `USE_OPENWEBUI_SEARCH` valve to `false`. The pipe will immediately fall back to the custom `SEARCH_URL` instead of triggering repeated errors inside Open WebUI.
 
 Below is an example query and output, which took 39 minutes for ten research cycles and full generation:
 

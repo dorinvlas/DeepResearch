@@ -376,6 +376,10 @@ class Pipe:
             default="",
             description="Override embedding model when using OpenRouter; leave blank to use Open WebUI defaults",
         )
+        USE_OPENWEBUI_SEARCH: bool = Field(
+            default=True,
+            description="Use Open WebUI's built-in search endpoint before falling back to the custom search URL",
+        )
         SEARCH_URL: str = Field(
             default="http://192.168.1.1:8888/search?q=",
             description="URL for web search API",
@@ -4783,6 +4787,11 @@ class Pipe:
 
     async def _try_openwebui_search(self, query: str) -> List[Dict]:
         """Try to use Open WebUI's built-in search functionality"""
+        if not getattr(self.valves, "USE_OPENWEBUI_SEARCH", True):
+            logger.debug(
+                "Skipping OpenWebUI search per USE_OPENWEBUI_SEARCH valve; using fallback"
+            )
+            return []
         try:
             from open_webui.routers.retrieval import process_web_search, SearchForm
 
@@ -4995,12 +5004,28 @@ class Pipe:
                                 logger.error(f"Error in HTML parsing: {e}")
 
                     # If we got this far, the response couldn't be parsed
+                    body_preview = ""
+                    try:
+                        body_preview = (await response.text())[:400]
+                    except Exception:
+                        body_preview = "<unable to read body>"
                     logger.error(
-                        f"Fallback search returned status code {response.status} but couldn't parse content"
+                        "Fallback search HTTP %s for %s; response preview: %s",
+                        response.status,
+                        search_url,
+                        body_preview,
                     )
                     return []
         except asyncio.TimeoutError:
             logger.error(f"Fallback search timed out for query: {query}")
+            return []
+        except aiohttp.ClientResponseError as e:
+            logger.error(
+                "Fallback search raised %s for %s: %s",
+                type(e).__name__,
+                query,
+                e,
+            )
             return []
         except Exception as e:
             logger.error(f"Error in fallback search: {e}")
@@ -5780,6 +5805,12 @@ Reply with JUST "Yes" or "No" - no explanation or other text.""",
                 if self.valves.OPENROUTER_CACHE_TOKENS:
                     headers["X-Cache-Tokens"] = str(self.valves.OPENROUTER_CACHE_TOKENS)
 
+                if ":" in model and "/" not in model:
+                    logger.warning(
+                        "Model '%s' may not match an OpenRouter model ID. Verify the configured model names at https://openrouter.ai/docs/models.",
+                        model,
+                    )
+
                 payload = {
                     "model": model,
                     "messages": messages,
@@ -5792,7 +5823,33 @@ Reply with JUST "Yes" or "No" - no explanation or other text.""",
                             response = await resp.json()
                         else:
                             text = await resp.text()
-                            raise Exception(f"OpenRouter completion failed {resp.status}: {text}")
+                            error_message = text
+                            suggestion = ""
+                            try:
+                                data = json.loads(text)
+                                if isinstance(data, dict):
+                                    error_obj = data.get("error")
+                                    if isinstance(error_obj, dict):
+                                        error_message = error_obj.get("message", text)
+                            except json.JSONDecodeError:
+                                pass
+
+                            lowered_message = error_message.lower() if isinstance(error_message, str) else ""
+                            if resp.status == 404 and "data policy" in lowered_message:
+                                suggestion = (
+                                    "Adjust your OpenRouter privacy settings for the selected model at https://openrouter.ai/settings/privacy."
+                                )
+                            elif resp.status == 400 and "not a valid model" in lowered_message:
+                                suggestion = (
+                                    "Confirm the model ID matches one listed at https://openrouter.ai/docs/models."
+                                )
+                            elif resp.status == 403:
+                                suggestion = "Verify the OpenRouter API key has access to this model and that your account allows it."
+
+                            detailed_message = f"OpenRouter completion failed {resp.status}: {error_message}"
+                            if suggestion:
+                                detailed_message = f"{detailed_message} Suggestion: {suggestion}"
+                            raise Exception(detailed_message)
             else:
                 form_data = {
                     "model": model,
