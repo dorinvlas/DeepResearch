@@ -12,7 +12,7 @@ The default settings are geared towards my personal dual-3090 setup. You could p
 The `aifoundry_pipe` script can run against multiple hosted inference providers while keeping the original Ollama support available. Choose one of the following sets of valves when configuring the pipe:
 
 - **Azure AI Foundry** – set `USE_AZURE_FOUNDRY` to true and provide `AZURE_API_BASE`, `AZURE_API_KEY`, and `AZURE_API_VERSION`. These settings drive both chat completions and embeddings requests against your Azure OpenAI resource.
-- **OpenRouter** – set `USE_OPENROUTER` to true and supply `OPENROUTER_API_KEY`. Optional valves like `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME` populate the recommended headers, while `OPENROUTER_CACHE_MAX_AGE` / `OPENROUTER_CACHE_TOKENS` expose OpenRouter's response caching controls. Embedding requests are routed through the same API base you configure via `OPENROUTER_API_BASE`.
+- **OpenRouter** – set `USE_OPENROUTER` to true and supply `OPENROUTER_API_KEY`. Optional valves like `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME` populate the recommended headers, while `OPENROUTER_CACHE_MAX_AGE` / `OPENROUTER_CACHE_TOKENS` expose OpenRouter's response caching controls. By default embeddings follow the Open WebUI embedding configuration; set `OPENROUTER_EMBEDDING_MODEL` if you want to send embedding requests through the OpenRouter API base you configure via `OPENROUTER_API_BASE`.
 
 Only one cloud provider can be enabled at a time. Leaving both flags false keeps the original Ollama-only behaviour intact.
 

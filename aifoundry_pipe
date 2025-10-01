@@ -372,6 +372,10 @@ class Pipe:
             description="Optional max tokens allowed from cache for OpenRouter (0 disables)",
             ge=0,
         )
+        OPENROUTER_EMBEDDING_MODEL: str = Field(
+            default="",
+            description="Override embedding model when using OpenRouter; leave blank to use Open WebUI defaults",
+        )
         SEARCH_URL: str = Field(
             default="http://192.168.1.1:8888/search?q=",
             description="URL for web search API",
@@ -723,6 +727,69 @@ class Pipe:
         words = text.split()
         return int(len(words) * 1.3)
 
+    async def _get_openwebui_embedding(self, text: str) -> Optional[List[float]]:
+        """Use Open WebUI's configured embedding function if available"""
+
+        request = getattr(self, "__request__", None)
+        if not request:
+            return None
+
+        app = getattr(request, "app", None)
+        if not app or not hasattr(app, "state"):
+            return None
+
+        embedding_function = getattr(app.state, "EMBEDDING_FUNCTION", None)
+        if not embedding_function:
+            return None
+
+        try:
+            result = embedding_function([text], user=getattr(self, "__user__", None))
+            if asyncio.iscoroutine(result):
+                result = await result
+        except Exception as e:
+            logger.error(f"Error using Open WebUI embedding function: {e}")
+            return None
+
+        if not result:
+            return None
+
+        candidates: List[Any] = []
+        if isinstance(result, dict):
+            data = result.get("data")
+            if isinstance(data, list) and data:
+                candidates.append(data[0])
+            embeddings = result.get("embeddings")
+            if isinstance(embeddings, list) and embeddings:
+                candidates.append(embeddings[0])
+            direct = result.get("embedding")
+            if direct is not None:
+                candidates.append(direct)
+        elif isinstance(result, list) and result:
+            candidates.append(result[0])
+
+        for candidate in candidates:
+            value = candidate
+            if isinstance(candidate, dict):
+                value = (
+                    candidate.get("embedding")
+                    or candidate.get("vector")
+                    or candidate.get("values")
+                )
+
+            if value is None:
+                continue
+
+            if hasattr(value, "tolist"):
+                value = value.tolist()
+
+            if isinstance(value, tuple):
+                value = list(value)
+
+            if isinstance(value, list) and value and not isinstance(value[0], str):
+                return value
+
+        return None
+
     async def get_embedding(self, text: str) -> Optional[List[float]]:
         """Get embedding for a text string using the configured embedding model with caching"""
         if not text or not text.strip():
@@ -738,6 +805,15 @@ class Pipe:
 
         # If not in cache, get from API
         try:
+            if self.valves.USE_OPENROUTER and not self.valves.OPENROUTER_EMBEDDING_MODEL:
+                embedding = await self._get_openwebui_embedding(text)
+                if embedding:
+                    self.embedding_cache.set(text, embedding)
+                    return embedding
+                logger.debug(
+                    "Open WebUI embedding function unavailable or returned no data; falling back to configured HTTP endpoint"
+                )
+
             connector = aiohttp.TCPConnector(force_close=True)
             async with aiohttp.ClientSession(connector=connector) as session:
                 if self.valves.USE_AZURE_FOUNDRY:
@@ -747,7 +823,7 @@ class Pipe:
                     )
                     headers = {"api-key": self.valves.AZURE_API_KEY}
                     payload = {"input": [text]}
-                elif self.valves.USE_OPENROUTER:
+                elif self.valves.USE_OPENROUTER and self.valves.OPENROUTER_EMBEDDING_MODEL:
                     base = self.valves.OPENROUTER_API_BASE.rstrip("/")
                     url = f"{base}/embeddings"
                     headers = {
@@ -759,7 +835,7 @@ class Pipe:
                     if self.valves.OPENROUTER_APP_NAME:
                         headers["X-Title"] = self.valves.OPENROUTER_APP_NAME
                     payload = {
-                        "model": self.valves.EMBEDDING_MODEL,
+                        "model": self.valves.OPENROUTER_EMBEDDING_MODEL,
                         "input": [text],
                     }
                 else:
@@ -773,22 +849,31 @@ class Pipe:
                 async with session.post(url, json=payload, headers=headers, timeout=30) as response:
                     if response.status == 200:
                         result = await response.json()
-                        if self.valves.USE_AZURE_FOUNDRY or self.valves.USE_OPENROUTER:
+                        if self.valves.USE_AZURE_FOUNDRY or (
+                            self.valves.USE_OPENROUTER
+                            and self.valves.OPENROUTER_EMBEDDING_MODEL
+                        ):
                             data = result.get("data", [])
                             if data:
                                 embedding = data[0].get("embedding")
                                 if embedding:
+                                    if hasattr(embedding, "tolist"):
+                                        embedding = embedding.tolist()
                                     self.embedding_cache.set(text, embedding)
                                     return embedding
                         else:
                             if "embedding" in result:
                                 embedding = result.get("embedding", [])
                                 if embedding:
+                                    if hasattr(embedding, "tolist"):
+                                        embedding = embedding.tolist()
                                     self.embedding_cache.set(text, embedding)
                                     return embedding
                             elif "embeddings" in result and result["embeddings"]:
                                 embedding = result["embeddings"][0]
                                 if embedding:
+                                    if hasattr(embedding, "tolist"):
+                                        embedding = embedding.tolist()
                                     self.embedding_cache.set(text, embedding)
                                     return embedding
                     else:
